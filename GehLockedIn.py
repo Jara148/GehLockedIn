@@ -10,13 +10,12 @@ import tensorflow as tf
 st.set_page_config(page_title="AI Focus Assistant", layout="centered")
 
 # --- CUSTOM CSS FÜR DESIGN (Dynamische Farben) ---
-# Wir nutzen session_state, um das Design basierend auf dem Status zu ändern
-if "app_state" not in tf.experimental.numpy: # Nur als Platzhalter für Zustand
-    st.session_state.app_state = "normal" # normal, alert, pause
+if "app_state" not in st.session_state: 
+    st.session_state.app_state = "normal" # Mögliche Zustände: normal, alert, pause
 
 def update_design():
     if st.session_state.app_state == "alert":
-        # Mix aus Orange/Rot: #FF4B2B
+        # Eine feurige Mischung aus Orange und Rot (#FF4B2B)
         color_theme = """
         <style>
         .stApp { background-color: #FF4B2B; transition: background-color 0.5s ease; }
@@ -25,7 +24,7 @@ def update_design():
         </style>
         """
     elif st.session_state.app_state == "pause":
-        # Dunkellila: #2E1A47
+        # Dunkellila (#2E1A47) wie gewünscht
         color_theme = """
         <style>
         .stApp { background-color: #2E1A47; transition: background-color 0.5s ease; }
@@ -34,14 +33,13 @@ def update_design():
         </style>
         """
     else:
-        # Standard Streamlit Design
+        # Standard Streamlit Design für die Arbeitsphase
         color_theme = "<style>.box { display: none; }</style>"
     st.markdown(color_theme, unsafe_allow_html=True)
 
 # --- MODELL LADEN ---
 @st.cache_resource
 def load_keras_model():
-    # Falls die Dateien im selben Ordner liegen
     model_path = "model.h5"
     label_path = "labels.txt"
     
@@ -61,7 +59,6 @@ if "focus_duration" not in st.session_state:
     st.session_state.focus_time_left = 45 * 60
     st.session_state.distracted_start_time = None
     st.session_state.locked_in_start_time = None
-    st.session_state.app_state = "normal"
     st.session_state.last_update = time.time()
     st.session_state.is_running = False
 
@@ -78,6 +75,7 @@ if st.sidebar.button("Ziele & Timer festlegen / Reset"):
     st.session_state.distracted_start_time = None
     st.session_state.locked_in_start_time = None
     st.session_state.is_running = True
+    st.session_state.last_update = time.time()
     st.rerun()
 
 # --- HINTERGRUND-SOUNDS ---
@@ -110,9 +108,9 @@ class VideoProcessor(VideoTransformerBase):
             index = np.argmax(prediction)
             self.current_prediction = labels[index]
             
-            # Text ins Videobild zeichnen
+            # Status-Text live ins Kamerabild zeichnen
             color = (0, 255, 0) if "locked" in self.current_prediction.lower() else (0, 0, 255)
-            cv2.putText(img, f"Status: {self.current_prediction}", (10, 40), 
+            cv2.putText(img, f"KI Status: {self.current_prediction}", (10, 40), 
                         cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
             
         return frame
@@ -121,7 +119,7 @@ class VideoProcessor(VideoTransformerBase):
 st.title("🧠 KI Fokus & Anti-Ablenkungs-Coach")
 
 if model is None:
-    st.error("⚠️ Bitte stelle sicher, dass 'model.h5' und 'labels.txt' im selben GitHub-Ordner liegen!")
+    st.error("⚠️ Bitte stelle sicher, dass 'model.h5' and 'labels.txt' im selben GitHub-Ordner liegen!")
 else:
     # Webcam Streamer starten
     ctx = webrtc_streamer(key="focus-streamer", video_transformer_factory=VideoProcessor)
@@ -140,11 +138,11 @@ else:
             # Zustand aus dem Video-Stream holen
             ki_status = ctx.video_transformer.current_prediction.lower()
             is_distracted = "abgelenkt" in ki_status or "distracted" in ki_status
-            is_locked_in = "locked" in ki_status
+            is_locked_in = "locked" in ki_status or "fokus" in ki_status
 
             # --- LOGIK FÜR DEN 2-MINUTEN TIMER ---
             if is_distracted:
-                st.session_state.locked_in_start_time = None # Locked-In Counter resetten
+                st.session_state.locked_in_start_time = None # Locked-In Counter löschen
                 if st.session_state.distracted_start_time is None:
                     st.session_state.distracted_start_time = current_time
                 
@@ -153,14 +151,14 @@ else:
                 
                 if elapsed_distraction >= 120: # 2 Minuten durchgehend abgelenkt
                     st.session_state.app_state = "alert"
-                    st.session_state.focus_time_left = st.session_state.focus_duration # Fokus-Timer komplett Neustarten
+                    st.session_state.focus_time_left = st.session_state.focus_duration # Fokus-Timer komplett resetten
             
             elif is_locked_in:
                 if st.session_state.distracted_start_time is not None:
                     if st.session_state.locked_in_start_time is None:
                         st.session_state.locked_in_start_time = current_time
                     
-                    # Wenn man 30 Sekunden wieder brav arbeitet, wird der Ablenkungs-Timer gelöscht
+                    # Wenn man 30 Sekunden am Stück wieder fokussiert ist, resettet sich der Ablenkungstimer
                     if current_time - st.session_state.locked_in_start_time >= 30:
                         st.session_state.distracted_start_time = None
                         st.session_state.locked_in_start_time = None
@@ -168,7 +166,7 @@ else:
                             st.session_state.app_state = "normal"
             
             # --- LOGIK FÜR DEN FOKUS TIMER ---
-            # Fokus-Timer läuft nur weiter, wenn kein Alarm aktiv ist
+            # Fokus-Timer läuft nur weiter, wenn der Nutzer arbeitet und KEIN Alarm aktiv ist
             if st.session_state.app_state == "normal":
                 st.session_state.focus_time_left -= dt
                 if st.session_state.focus_time_left <= 0:
@@ -199,5 +197,5 @@ else:
             else:
                 alert_placeholder.empty()
 
-            time.sleep(0.5) # CPU entlasten
-            st.rerun()
+            time.sleep(0.5) # CPU schonen
+            st.rerun()  
